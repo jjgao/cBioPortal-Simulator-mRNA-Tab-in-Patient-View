@@ -21,6 +21,7 @@ const Layout: React.FC<LayoutProps> = ({ patient, activeTab, setActiveTab, child
                 <Dna size={20} />
               </div>
               <span className="font-bold text-lg tracking-tight text-blue-900">cBioPortal <span className="font-normal text-slate-500">Simulator</span></span>
+              <span className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 font-mono">v0.01</span>
             </div>
             <div className="flex items-center space-x-4 text-sm text-slate-600">
               <span>Study: <span className="font-medium text-slate-900">{patient.studyId}</span></span>
