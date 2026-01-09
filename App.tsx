@@ -10,7 +10,11 @@ const MOCK_PATIENT: Patient = {
   cancerType: 'Glioblastoma Multiforme',
   age: 59,
   sex: 'Male',
-  mutationCount: 42
+  mutationCount: 42,
+  samples: [
+    { id: 'TCGA-02-0001-01', sampleType: 'Primary Solid Tumor' },
+    { id: 'TCGA-02-0001-02', sampleType: 'Recurrent Tumor (Metastasis)' }
+  ]
 };
 
 const App: React.FC = () => {

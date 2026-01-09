@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { getGeneInsight } from '../services/geminiService';
+import { getGeneInsight, SampleContext } from '../services/geminiService';
 import { AIAnalysisResult } from '../types';
-import { Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle, Zap, Copy, GitMerge } from 'lucide-react';
 
 interface GeneInsightCardProps {
   geneSymbol: string;
-  expressionValue: number;
   cancerType: string;
+  samplesData: SampleContext[];
 }
 
-const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, expressionValue, cancerType }) => {
+const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, cancerType, samplesData }) => {
   const [insight, setInsight] = useState<AIAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,7 @@ const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, expressio
       setInsight(null);
       
       try {
-        const data = await getGeneInsight(geneSymbol, expressionValue, cancerType);
+        const data = await getGeneInsight(geneSymbol, cancerType, samplesData);
         if (isMounted) {
             setInsight(data);
         }
@@ -44,16 +44,17 @@ const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, expressio
       }
     };
 
-    if (geneSymbol) {
+    if (geneSymbol && samplesData.length > 0) {
       fetchInsight();
     }
-  }, [geneSymbol, expressionValue, cancerType, isMounted]);
+  }, [geneSymbol, cancerType, JSON.stringify(samplesData), isMounted]);
 
   if (loading) {
     return (
       <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-lg shadow-sm border border-indigo-100 h-full flex flex-col items-center justify-center min-h-[250px]">
         <Loader2 className="animate-spin text-indigo-500 mb-2" size={24} />
-        <p className="text-sm text-indigo-700 font-medium">Analyzing {geneSymbol} expression profile...</p>
+        <p className="text-sm text-indigo-700 font-medium">Analyzing {geneSymbol}...</p>
+        <p className="text-xs text-indigo-400 mt-1">Comparing {samplesData.length} samples...</p>
       </div>
     );
   }
@@ -81,6 +82,31 @@ const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, expressio
         <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">Powered by Gemini</span>
       </div>
       
+      {/* Sample Context Summary */}
+      <div className="bg-white px-4 py-2 border-b border-gray-100 flex flex-col gap-2 max-h-32 overflow-y-auto">
+        {samplesData.map(s => (
+            <div key={s.sampleId} className="flex items-center gap-2 text-xs">
+                <span className="font-semibold text-slate-700 min-w-[120px] truncate">{s.sampleId}:</span>
+                <div className="flex gap-2">
+                    {s.mutation ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">
+                            <Zap size={8} /> {s.mutation}
+                        </span>
+                    ) : (
+                        <span className="text-slate-400 italic">WT</span>
+                    )}
+                    {s.cna && s.cna !== 'DIPLOID' && (
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                            s.cna === 'AMP' || s.cna === 'GAIN' ? 'text-red-700 bg-red-50 border-red-100' : 'text-blue-700 bg-blue-50 border-blue-100'
+                        }`}>
+                            <Copy size={8} /> {s.cna}
+                        </span>
+                    )}
+                </div>
+            </div>
+        ))}
+      </div>
+
       <div className="p-5 space-y-4 text-sm flex-1 overflow-y-auto">
         <div>
           <h4 className="font-semibold text-slate-800 mb-1">Biological Summary</h4>

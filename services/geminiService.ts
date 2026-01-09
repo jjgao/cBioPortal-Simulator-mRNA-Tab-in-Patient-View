@@ -3,20 +3,42 @@ import { AIAnalysisResult } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+export interface SampleContext {
+  sampleId: string;
+  sampleType: string;
+  expressionValue: number;
+  mutation?: string;
+  cna?: string;
+  structuralVariant?: string;
+}
+
 export const getGeneInsight = async (
   geneSymbol: string,
-  expressionValue: number,
-  cancerType: string
+  cancerType: string,
+  samples: SampleContext[]
 ): Promise<AIAnalysisResult> => {
-  const expressionLevel = expressionValue > 1.5 ? "high" : expressionValue < -1.5 ? "low" : "normal";
   
+  const sampleDescriptions = samples.map(s => {
+    const expressionLevel = s.expressionValue > 1.5 ? "high" : s.expressionValue < -1.5 ? "low" : "normal";
+    let desc = `- Sample ${s.sampleId} (${s.sampleType}): mRNA Expression is ${expressionLevel} (Z-score: ${s.expressionValue.toFixed(2)}).`;
+    
+    if (s.mutation) desc += ` Detected mutation: ${s.mutation}.`;
+    if (s.cna && s.cna !== 'DIPLOID') desc += ` Copy number status: ${s.cna}.`;
+    if (s.structuralVariant) desc += ` Structural variant: ${s.structuralVariant}.`;
+    
+    return desc;
+  }).join("\n    ");
+
   const prompt = `
-    Analyze the clinical significance of ${expressionLevel} expression (Z-score: ${expressionValue.toFixed(2)}) of the gene ${geneSymbol} in the context of ${cancerType}.
+    Analyze the clinical significance of ${geneSymbol} in a patient with ${cancerType}, focusing on the evolution or differences between samples (e.g., Primary vs Metastasis) if applicable.
+    
+    Patient Sample Profiles:
+    ${sampleDescriptions}
     
     Provide the response in structured JSON with the following fields:
-    - summary: A brief explanation of the gene's function and what this expression level implies biologically.
-    - therapeuticImplications: Potential targeted therapies or drug sensitivities/resistance associated with this profile.
-    - prognosticValue: Is this typically associated with good or poor prognosis?
+    - summary: A brief explanation of the gene's function and the biological implication of the observed profiles across samples (e.g., acquired resistance, preserved drivers).
+    - therapeuticImplications: Specific targeted therapies, drug sensitivities, or resistance mechanisms suggested by these profiles (highlight differences between samples if any).
+    - prognosticValue: Is this specific profile (or evolution) typically associated with good or poor prognosis?
   `;
 
   try {

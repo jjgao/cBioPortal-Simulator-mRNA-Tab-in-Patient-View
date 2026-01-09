@@ -3,14 +3,14 @@ import { Patient, CohortSample, GeneProfile } from '../types';
 import ExpressionChart from './ExpressionChart';
 import GeneInsightCard from './GeneInsightCard';
 import GeneTable from './GeneTable';
-import { Download, Filter } from 'lucide-react';
+import { Download, Filter, Zap, Copy, GitMerge } from 'lucide-react';
 
 interface ExpressionTabProps {
   patient: Patient;
 }
 
-// Generate a static list of interesting genes with random values for the patient
-const generatePatientGeneProfile = (): GeneProfile[] => {
+// Generate gene profile based on Sample ID to simulate tumor evolution
+const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
   const genes = [
     'EGFR', 'TP53', 'PTEN', 'MYC', 'KRAS', 'BRCA1', 'BRCA2', 'IDH1', 'IDH2',
     'ATRX', 'TERT', 'CDKN2A', 'RB1', 'MET', 'CDK4', 'MDM2', 'ALK', 'ROS1',
@@ -19,39 +19,79 @@ const generatePatientGeneProfile = (): GeneProfile[] => {
     'SMAD4', 'ARID1A', 'BAP1', 'PBRM1', 'SETD2', 'KMT2D'
   ];
 
-  return genes.map(symbol => {
-    // Generate some "interesting" outliers
-    let zScore = (Math.random() * 4) - 2; // -2 to 2 normal dist approximation
-    
-    // Force some known oncogenes to be high for demo
-    if (['EGFR', 'MYC', 'CDK4', 'MDM2'].includes(symbol)) zScore += 1.5;
-    // Force tumor suppressors low
-    if (['TP53', 'PTEN', 'RB1', 'CDKN2A'].includes(symbol)) zScore -= 1.5;
+  // Check if this is the primary or recurrent sample
+  // Primary usually ends in -01 in TCGA, Recurrent in -02
+  const isRecurrent = sampleId.endsWith('-02');
 
-    // Clamp
+  return genes.map(symbol => {
+    // Default base profile
+    let zScore = (Math.random() * 4) - 2; 
+    let mutation: string | undefined;
+    let cna: GeneProfile['cna'] = 'DIPLOID';
+    let structuralVariant: string | undefined;
+
+    // --- PRIMARY TUMOR PROFILE ---
+    if (!isRecurrent) {
+        if (symbol === 'EGFR') {
+            zScore = 3.2; 
+            cna = 'AMP'; 
+            mutation = 'vIII'; 
+        } else if (symbol === 'TP53') {
+            zScore = -1.8;
+            mutation = 'R273H'; 
+            cna = 'HETLOSS';
+        } else if (symbol === 'PTEN') {
+            zScore = -2.5;
+            cna = 'HOMDEL'; 
+        } else if (symbol === 'MET') {
+            zScore = 0.2; // Normal in primary
+            cna = 'DIPLOID';
+        }
+    } 
+    // --- RECURRENT/METASTATIC PROFILE (Evolution) ---
+    else {
+        if (symbol === 'EGFR') {
+            zScore = 1.5; // Decreased expression due to treatment?
+            cna = 'GAIN'; // Copy number reduced
+            // Mutation might be lost or sub-clonal
+        } else if (symbol === 'TP53') {
+            zScore = -1.8; // Driver remains
+            mutation = 'R273H'; 
+            cna = 'HETLOSS';
+        } else if (symbol === 'MET') {
+            zScore = 4.1; // NEW Resistance mechanism!
+            cna = 'AMP';
+        } else if (symbol === 'PTEN') {
+            zScore = -2.5; // Stays deleted
+            cna = 'HOMDEL'; 
+        }
+    }
+
+    // Common alterations across both
+    if (symbol === 'CDKN2A') { zScore = -3.0; cna = 'HOMDEL'; }
+    if (symbol === 'CDK4') { zScore = 2.1; cna = 'AMP'; }
+
+    // Random noise cleanup
+    if (!cna || cna === 'DIPLOID') {
+        const rand = Math.random();
+        if (rand > 0.95) cna = 'AMP';
+        else if (rand < 0.05) cna = 'HETLOSS';
+    }
+
+    // Clamp Z-Score
     zScore = Math.max(-4, Math.min(4, zScore));
 
-    return { symbol, zScore };
+    return { symbol, zScore, mutation, cna, structuralVariant };
   });
 };
 
-// Mock cohort generator that respects the patient's specific value
-const generateCohortData = (gene: string, patientValue: number, currentPatientId: string): CohortSample[] => {
+// Mock cohort generator that includes ALL patient samples
+const generateCohortData = (gene: string, patientSamples: {id: string, type: string, zScore: number}[]): CohortSample[] => {
   const count = 50;
   const samples: CohortSample[] = [];
   
+  // Add Cohort Background
   for (let i = 0; i < count; i++) {
-    if (i === 0) {
-      samples.push({
-        sampleId: currentPatientId,
-        expression: patientValue,
-        isCurrentPatient: true
-      });
-      continue;
-    }
-
-    // Generate background cohort data
-    // Use a standard normal distribution roughly
     let u = 0, v = 0;
     while(u === 0) u = Math.random();
     while(v === 0) v = Math.random();
@@ -64,44 +104,92 @@ const generateCohortData = (gene: string, patientValue: number, currentPatientId
     });
   }
   
-  // Shuffle except the first one (which we want to find easily but chart handles sorting)
-  const cohort = samples.slice(1);
-  cohort.sort(() => Math.random() - 0.5);
-  
-  return [samples[0], ...cohort];
+  // Add All Patient Samples
+  patientSamples.forEach(ps => {
+    samples.push({
+      sampleId: ps.id,
+      sampleType: ps.type,
+      expression: ps.zScore,
+      isCurrentPatient: true
+    });
+  });
+
+  return samples;
 };
 
 const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
-  // Initialize patient's gene profile once
-  const [patientGenes] = useState<GeneProfile[]>(() => generatePatientGeneProfile());
   const [selectedGene, setSelectedGene] = useState('EGFR');
+  
+  // 1. Get FULL Data for ALL samples (for Chart + Detail Box + AI)
+  const allPatientSamplesFullData = useMemo(() => {
+    return patient.samples.map(sample => {
+        const genes = generatePatientGeneProfile(sample.id);
+        const gene = genes.find(g => g.symbol === selectedGene) || { 
+            symbol: selectedGene, zScore: 0, cna: 'DIPLOID' 
+        };
+        return {
+            sampleId: sample.id,
+            sampleType: sample.sampleType,
+            expressionValue: gene.zScore,
+            ...gene // symbol, zScore, mutation, cna, etc.
+        };
+    });
+  }, [patient.samples, selectedGene]);
+
+  // 2. Aggregate ALL samples for ALL genes (for Table)
+  const aggregatedGeneData = useMemo(() => {
+    const map: Record<string, { symbol: string, samples: Record<string, GeneProfile> }> = {};
+    
+    patient.samples.forEach(sample => {
+        const genes = generatePatientGeneProfile(sample.id);
+        genes.forEach(gene => {
+            if (!map[gene.symbol]) {
+                map[gene.symbol] = { symbol: gene.symbol, samples: {} };
+            }
+            map[gene.symbol].samples[sample.id] = gene;
+        });
+    });
+    
+    return Object.values(map);
+  }, [patient.samples]);
+
   const [cohortData, setCohortData] = useState<CohortSample[]>([]);
 
-  // Find the currently selected gene's data
-  const currentGeneData = useMemo(() => 
-    patientGenes.find(g => g.symbol === selectedGene) || { symbol: selectedGene, zScore: 0 },
-  [patientGenes, selectedGene]);
-
   useEffect(() => {
-    const data = generateCohortData(selectedGene, currentGeneData.zScore, patient.id);
+    // Map full data to format expected by cohort generator
+    const chartSamples = allPatientSamplesFullData.map(s => ({
+        id: s.sampleId,
+        type: s.sampleType,
+        zScore: s.expressionValue
+    }));
+    const data = generateCohortData(selectedGene, chartSamples);
     setCohortData(data);
-  }, [selectedGene, currentGeneData.zScore, patient.id]);
+  }, [selectedGene, allPatientSamplesFullData]);
 
   return (
     <div className="h-full">
       <div className="flex flex-col space-y-4">
         
         {/* Header / Options */}
-        <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-             <h2 className="text-sm font-semibold text-slate-700 pl-1">
-                mRNA Expression (z-scores relative to diploid samples)
-             </h2>
+        <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+             <div className="flex items-center gap-4">
+                <h2 className="text-sm font-bold text-slate-800">Expression Analysis</h2>
+
+                <div className="hidden md:block h-6 w-px bg-gray-200"></div>
+
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span className="flex items-center gap-1"><Zap size={10} className="text-green-600"/> Mutation</span>
+                    <span className="flex items-center gap-1"><Copy size={10} className="text-red-500"/> CNA</span>
+                    <span className="flex items-center gap-1"><GitMerge size={10} className="text-purple-500"/> Fusion</span>
+                </div>
+             </div>
+             
              <div className="flex gap-2">
                 <button className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors">
                     <Filter size={14} /> Filter
                 </button>
                 <button className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors">
-                    <Download size={14} /> Download Data
+                    <Download size={14} /> Download
                 </button>
             </div>
         </div>
@@ -110,52 +198,86 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
             {/* Left Panel: Gene Table */}
-            <div className="lg:col-span-3 h-[500px] lg:h-[700px]">
+            <div className="lg:col-span-5 h-[500px] lg:h-[700px]">
                 <GeneTable 
-                    genes={patientGenes} 
+                    data={aggregatedGeneData}
+                    samples={patient.samples}
                     selectedGene={selectedGene} 
                     onSelectGene={setSelectedGene} 
                 />
             </div>
 
             {/* Right Panel: Visualization & Insights */}
-            <div className="lg:col-span-9 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-7 grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
                 {/* Center: Chart */}
                 <div className="lg:col-span-2 h-[450px]">
                     <ExpressionChart 
                         cohortData={cohortData} 
                         geneSymbol={selectedGene} 
-                        patientId={patient.id} 
+                        patientId={patient.id}
                     />
                      <div className="mt-4 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
-                        <h3 className="text-sm font-semibold text-slate-800 mb-3 border-b border-gray-100 pb-2">Selected Gene: {selectedGene}</h3>
-                        <div className="flex justify-between items-end">
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Patient Expression</p>
-                                <div className="flex items-baseline gap-2 mt-1">
-                                    <span className={`text-2xl font-bold font-mono ${Math.abs(currentGeneData.zScore) > 1.5 ? (currentGeneData.zScore > 0 ? 'text-red-600' : 'text-blue-600') : 'text-slate-700'}`}>
-                                        {currentGeneData.zScore > 0 ? '+' : ''}{currentGeneData.zScore.toFixed(2)}
-                                    </span>
-                                    <span className="text-sm text-slate-400">Z-Score</span>
+                        <div className="mb-3 border-b border-gray-100 pb-2">
+                            <h3 className="text-sm font-semibold text-slate-800">Selected Gene: {selectedGene}</h3>
+                        </div>
+
+                        {/* List all samples */}
+                        <div className="grid grid-cols-1 gap-2">
+                            {allPatientSamplesFullData.map(sample => (
+                                <div key={sample.sampleId} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold text-slate-700">{sample.sampleId}</span>
+                                        <span className="text-[10px] text-slate-400">{sample.sampleType}</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-4">
+                                        {/* Alterations */}
+                                        <div className="flex gap-1">
+                                            {sample.mutation && (
+                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 border border-green-200">
+                                                    <Zap size={10} /> {sample.mutation}
+                                                </span>
+                                            )}
+                                            {sample.cna && sample.cna !== 'DIPLOID' && (
+                                                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                                                    sample.cna === 'AMP' || sample.cna === 'GAIN' 
+                                                        ? 'bg-red-50 text-red-700 border-red-100' 
+                                                        : 'bg-blue-50 text-blue-700 border-blue-100'
+                                                }`}>
+                                                    <Copy size={10} /> {sample.cna}
+                                                </span>
+                                            )}
+                                            {sample.structuralVariant && (
+                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200">
+                                                    <GitMerge size={10} /> Fus
+                                                </span>
+                                            )}
+                                            {!sample.mutation && (!sample.cna || sample.cna === 'DIPLOID') && !sample.structuralVariant && (
+                                                <span className="text-[10px] text-slate-300 italic">No alterations</span>
+                                            )}
+                                        </div>
+
+                                        {/* Z-Score */}
+                                        <div className="w-24 text-right">
+                                            <span className={`text-lg font-bold font-mono ${Math.abs(sample.expressionValue) > 1.5 ? (sample.expressionValue > 0 ? 'text-red-600' : 'text-blue-600') : 'text-slate-700'}`}>
+                                                {sample.expressionValue > 0 ? '+' : ''}{sample.expressionValue.toFixed(2)}
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 block -mt-1">Z-Score</span>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Cohort Percentile</p>
-                                <p className="text-lg font-medium text-slate-700 mt-1">
-                                     {((cohortData.filter(d => d.expression < currentGeneData.zScore).length / cohortData.length) * 100).toFixed(1)}th
-                                </p>
-                            </div>
+                            ))}
                         </div>
                     </div>
                 </div>
 
-                {/* Right: AI Insights */}
-                <div className="lg:col-span-1 h-full min-h-[400px]">
+                {/* Bottom: AI Insights */}
+                <div className="lg:col-span-2 h-full min-h-[300px]">
                     <GeneInsightCard 
-                        geneSymbol={selectedGene} 
-                        expressionValue={currentGeneData.zScore} 
+                        geneSymbol={selectedGene}
                         cancerType={patient.cancerType}
+                        samplesData={allPatientSamplesFullData}
                     />
                 </div>
             </div>

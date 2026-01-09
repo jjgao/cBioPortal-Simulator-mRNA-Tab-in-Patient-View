@@ -1,3 +1,8 @@
+export interface Sample {
+  id: string;
+  sampleType: string; // e.g., 'Primary Solid Tumor', 'Metastasis'
+}
+
 export interface Patient {
   id: string;
   studyId: string;
@@ -5,6 +10,7 @@ export interface Patient {
   age: number;
   sex: 'Male' | 'Female';
   mutationCount: number;
+  samples: Sample[];
 }
 
 export interface GeneExpression {
@@ -20,10 +26,14 @@ export interface GeneProfile {
   symbol: string;
   zScore: number;
   cytoband?: string;
+  mutation?: string; // e.g., 'V600E', 'Missense'
+  cna?: 'AMP' | 'HOMDEL' | 'GAIN' | 'HETLOSS' | 'DIPLOID';
+  structuralVariant?: string; // e.g., 'TMPRSS2-ERG'
 }
 
 export interface CohortSample {
   sampleId: string;
+  sampleType?: string;
   expression: number;
   isCurrentPatient: boolean;
 }
