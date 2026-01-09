@@ -3,11 +3,13 @@ import { Patient, CohortSample, GeneProfile } from '../types';
 import ExpressionChart from './ExpressionChart';
 import GeneInsightCard from './GeneInsightCard';
 import GeneTable from './GeneTable';
-import { Download, Filter, Zap, Copy, GitMerge } from 'lucide-react';
+import { Download, Filter, Zap, Copy, GitMerge, Users, LayoutGrid } from 'lucide-react';
 
 interface ExpressionTabProps {
   patient: Patient;
 }
+
+type CohortScope = 'pancancer' | 'cancer_type';
 
 // Generate gene profile based on Sample ID to simulate tumor evolution
 const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
@@ -86,19 +88,40 @@ const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
 };
 
 // Mock cohort generator that includes ALL patient samples
-const generateCohortData = (gene: string, patientSamples: {id: string, type: string, zScore: number}[]): CohortSample[] => {
-  const count = 50;
+const generateCohortData = (
+    gene: string, 
+    patientSamples: {id: string, type: string, zScore: number}[],
+    scope: CohortScope,
+    patientCancerType: string
+): CohortSample[] => {
+  const count = scope === 'pancancer' ? 200 : 60;
   const samples: CohortSample[] = [];
   
-  // Add Cohort Background
+  // Cohort Parameters
+  // Pancancer: Broad distribution
+  // Specific: Maybe tighter or shifted depending on gene, but random for this mock
+  
   for (let i = 0; i < count; i++) {
     let u = 0, v = 0;
     while(u === 0) u = Math.random();
     while(v === 0) v = Math.random();
     let z = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
     
+    // Slight shift if specific cohort to simulate differences
+    if (scope === 'cancer_type') {
+        z = z * 0.9; // Slightly tighter
+    }
+
+    let sampleTypeLabel = patientCancerType;
+    if (scope === 'pancancer') {
+        // Randomly assign other cancer types
+        const types = ['BRCA', 'LUAD', 'SKCM', 'COAD', 'PRAD', 'KIRC', patientCancerType];
+        sampleTypeLabel = types[Math.floor(Math.random() * types.length)];
+    }
+
     samples.push({
-      sampleId: `TCGA-XX-${1000 + i}`,
+      sampleId: `TCGA-Mock-${1000 + i}`,
+      sampleType: sampleTypeLabel,
       expression: z,
       isCurrentPatient: false
     });
@@ -119,6 +142,7 @@ const generateCohortData = (gene: string, patientSamples: {id: string, type: str
 
 const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
   const [selectedGene, setSelectedGene] = useState('EGFR');
+  const [cohortScope, setCohortScope] = useState<CohortScope>('pancancer');
   
   // 1. Get FULL Data for ALL samples (for Chart + Detail Box + AI)
   const allPatientSamplesFullData = useMemo(() => {
@@ -162,9 +186,9 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
         type: s.sampleType,
         zScore: s.expressionValue
     }));
-    const data = generateCohortData(selectedGene, chartSamples);
+    const data = generateCohortData(selectedGene, chartSamples, cohortScope, patient.cancerType);
     setCohortData(data);
-  }, [selectedGene, allPatientSamplesFullData]);
+  }, [selectedGene, allPatientSamplesFullData, cohortScope, patient.cancerType]);
 
   return (
     <div className="h-full">
@@ -175,9 +199,27 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
              <div className="flex items-center gap-4">
                 <h2 className="text-sm font-bold text-slate-800">Expression Analysis</h2>
 
+                {/* Cohort Toggle */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-md border border-slate-200">
+                    <button 
+                        onClick={() => setCohortScope('pancancer')}
+                        className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all ${cohortScope === 'pancancer' ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <LayoutGrid size={12} />
+                        Pancancer
+                    </button>
+                    <button 
+                        onClick={() => setCohortScope('cancer_type')}
+                        className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all ${cohortScope === 'cancer_type' ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Users size={12} />
+                        {patient.cancerType}
+                    </button>
+                </div>
+
                 <div className="hidden md:block h-6 w-px bg-gray-200"></div>
 
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500">
                     <span className="flex items-center gap-1"><Zap size={10} className="text-green-600"/> Mutation</span>
                     <span className="flex items-center gap-1"><Copy size={10} className="text-red-500"/> CNA</span>
                     <span className="flex items-center gap-1"><GitMerge size={10} className="text-purple-500"/> Fusion</span>
