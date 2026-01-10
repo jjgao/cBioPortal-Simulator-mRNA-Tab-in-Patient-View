@@ -1,6 +1,6 @@
 {
   "name": "cBioPortal Patient Expression View",
-  "version": "0.01",
+  "version": "0.02",
   "description": "A simulated cBioPortal Patient View Expression tab featuring mRNA expression visualization (z-scores), cohort comparison, and AI-powered gene insights using Google Gemini.",
   "requestFramePermissions": []
 }

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.02] - GTEx & Visualization Update
+
+### Added
+- **GTEx Integration**:
+  - New "Normal Tissues" view in the Expression tab showing median gene expression across healthy tissues (GTEx V8).
+  - Automatic highlighting of the normal tissue corresponding to the patient's cancer type (e.g., Brain for Glioblastoma).
+- **Chart Improvements**:
+  - **Expression Scatter Plot**: Implemented layered rendering to ensure patient samples are always visible on top of the reference cohort.
+  - **UI/UX**: Moved the "Pancancer vs. Cancer Type" toggle directly into the chart panel for better usability.
+  - Increased chart height for better readability of tissue labels.
+- **AI Enhancements**:
+  - Updated Gemini prompt to include normal tissue expression context, allowing for "Tumor vs. Normal" analysis in the Gene Insight Card.
+
 ## [0.01] - Initial Release
 
 ### Added
