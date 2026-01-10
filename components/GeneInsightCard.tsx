@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { getGeneInsight, SampleContext } from '../services/geminiService';
 import { AIAnalysisResult } from '../types';
-import { Sparkles, Loader2, AlertCircle, Zap, Copy, GitMerge } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle, Zap, Copy } from 'lucide-react';
 
 interface GeneInsightCardProps {
   geneSymbol: string;
   cancerType: string;
   samplesData: SampleContext[];
+  normalTissueContext?: string;
 }
 
-const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, cancerType, samplesData }) => {
+const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, cancerType, samplesData, normalTissueContext }) => {
   const [insight, setInsight] = useState<AIAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +30,7 @@ const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, cancerTyp
       setInsight(null);
       
       try {
-        const data = await getGeneInsight(geneSymbol, cancerType, samplesData);
+        const data = await getGeneInsight(geneSymbol, cancerType, samplesData, normalTissueContext);
         if (isMounted) {
             setInsight(data);
         }
@@ -47,14 +48,14 @@ const GeneInsightCard: React.FC<GeneInsightCardProps> = ({ geneSymbol, cancerTyp
     if (geneSymbol && samplesData.length > 0) {
       fetchInsight();
     }
-  }, [geneSymbol, cancerType, JSON.stringify(samplesData), isMounted]);
+  }, [geneSymbol, cancerType, JSON.stringify(samplesData), normalTissueContext, isMounted]);
 
   if (loading) {
     return (
       <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-lg shadow-sm border border-indigo-100 h-full flex flex-col items-center justify-center min-h-[250px]">
         <Loader2 className="animate-spin text-indigo-500 mb-2" size={24} />
         <p className="text-sm text-indigo-700 font-medium">Analyzing {geneSymbol}...</p>
-        <p className="text-xs text-indigo-400 mt-1">Comparing {samplesData.length} samples...</p>
+        <p className="text-xs text-indigo-400 mt-1">Checking tumor vs normal tissue context...</p>
       </div>
     );
   }

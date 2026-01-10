@@ -12,18 +12,35 @@ import {
   ReferenceLine,
   Cell
 } from 'recharts';
-import { CohortSample } from '../types';
+import { CohortSample, CohortScope } from '../types';
+import { LayoutGrid, Users } from 'lucide-react';
 
 interface ExpressionChartProps {
   cohortData: CohortSample[];
   geneSymbol: string;
   patientId: string;
+  cohortScope: CohortScope;
+  setCohortScope: (scope: CohortScope) => void;
+  cancerType: string;
 }
 
-const ExpressionChart: React.FC<ExpressionChartProps> = ({ cohortData, geneSymbol, patientId }) => {
+const ExpressionChart: React.FC<ExpressionChartProps> = ({ 
+  cohortData, 
+  geneSymbol, 
+  patientId,
+  cohortScope,
+  setCohortScope,
+  cancerType
+}) => {
   // Sort data by expression level for the plot
+  // We also prepare a secondary field 'patientExpression' for layering patient samples on top
   const sortedData = useMemo(() => {
-    return [...cohortData].sort((a, b) => a.expression - b.expression);
+    const sorted = [...cohortData].sort((a, b) => a.expression - b.expression);
+    return sorted.map(d => ({
+        ...d,
+        // For the overlay layer: value exists only if it is a patient sample
+        patientExpression: d.isCurrentPatient ? d.expression : null
+    }));
   }, [cohortData]);
 
   // Identify patient samples for legend/colors
@@ -62,10 +79,30 @@ const ExpressionChart: React.FC<ExpressionChartProps> = ({ cohortData, geneSymbo
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
         <h3 className="text-sm font-semibold text-slate-700">
           mRNA Expression Z-Scores - {geneSymbol}
         </h3>
+
+        {/* Cohort Toggle - Moved here */}
+        <div className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200">
+            <button 
+                onClick={() => setCohortScope('pancancer')}
+                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded transition-all ${cohortScope === 'pancancer' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                title="Compare against Pancancer cohort"
+            >
+                <LayoutGrid size={10} />
+                Pancancer
+            </button>
+            <button 
+                onClick={() => setCohortScope('cancer_type')}
+                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded transition-all ${cohortScope === 'cancer_type' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                title={`Compare against ${cancerType} cohort`}
+            >
+                <Users size={10} />
+                {cancerType}
+            </button>
+        </div>
       </div>
       
       <div className="flex-1 w-full min-h-0">
@@ -90,18 +127,34 @@ const ExpressionChart: React.FC<ExpressionChartProps> = ({ cohortData, geneSymbo
             <ReferenceLine y={-2} stroke="#cbd5e1" strokeDasharray="3 3" label={{ value: '-2 SD', fontSize: 10, fill: '#94a3b8' }} />
             <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1} />
 
-            {/* We use Scatter for the points to mimic a strip plot */}
-            <Scatter name="Samples" dataKey="expression" fill="#94a3b8" shape="circle">
+            {/* Layer 1: Background Scatter (All samples, mostly grey) */}
+            <Scatter name="Samples" dataKey="expression" shape="circle" isAnimationActive={false}>
                {sortedData.map((entry, index) => (
                  <Cell 
                    key={`cell-${index}`} 
                    fill={entry.isCurrentPatient ? getSampleColor(entry.sampleId) : '#e2e8f0'} 
-                   stroke={entry.isCurrentPatient ? '#fff' : 'none'}
-                   strokeWidth={2}
-                   r={entry.isCurrentPatient ? 8 : 4}
+                   // If it's a patient, we draw it here too, but the overlay layer will handle the "pop"
+                   // For non-patients, we just draw grey dots.
                  />
                ))}
             </Scatter>
+
+            {/* Layer 2: Overlay Scatter (Patient samples ONLY) 
+                We use 'patientExpression' which is null for non-patients, causing them to be skipped.
+                This ensures patient samples are drawn ON TOP of the background samples.
+            */}
+            <Scatter name="PatientSamples" dataKey="patientExpression" shape="circle" isAnimationActive={false}>
+                {sortedData.map((entry, index) => (
+                    <Cell 
+                        key={`overlay-cell-${index}`} 
+                        fill={getSampleColor(entry.sampleId)} 
+                        stroke="#fff"
+                        strokeWidth={2}
+                        r={6} // Make them slightly prominent
+                    />
+                ))}
+            </Scatter>
+
           </ComposedChart>
         </ResponsiveContainer>
       </div>

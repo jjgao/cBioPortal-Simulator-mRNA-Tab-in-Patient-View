@@ -15,7 +15,8 @@ export interface SampleContext {
 export const getGeneInsight = async (
   geneSymbol: string,
   cancerType: string,
-  samples: SampleContext[]
+  samples: SampleContext[],
+  normalTissueContext?: string
 ): Promise<AIAnalysisResult> => {
   
   const sampleDescriptions = samples.map(s => {
@@ -31,13 +32,16 @@ export const getGeneInsight = async (
 
   const prompt = `
     Analyze the clinical significance of ${geneSymbol} in a patient with ${cancerType}, focusing on the evolution or differences between samples (e.g., Primary vs Metastasis) if applicable.
-    
-    Patient Sample Profiles:
+
+    Patient Sample Profiles (Tumor):
     ${sampleDescriptions}
+
+    Normal Tissue Context (GTEx):
+    ${normalTissueContext || "Not available."}
     
     Provide the response in structured JSON with the following fields:
-    - summary: A brief explanation of the gene's function and the biological implication of the observed profiles across samples (e.g., acquired resistance, preserved drivers).
-    - therapeuticImplications: Specific targeted therapies, drug sensitivities, or resistance mechanisms suggested by these profiles (highlight differences between samples if any).
+    - summary: A brief explanation of the gene's function. Compare the patient's tumor expression to the normal tissue context (e.g., is it overexpressed compared to normal ${cancerType} tissue?) and discuss biological implications.
+    - therapeuticImplications: Specific targeted therapies, drug sensitivities, or resistance mechanisms suggested by these profiles.
     - prognosticValue: Is this specific profile (or evolution) typically associated with good or poor prognosis?
   `;
 

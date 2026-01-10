@@ -1,3 +1,4 @@
+
 export interface Sample {
   id: string;
   sampleType: string; // e.g., 'Primary Solid Tumor', 'Metastasis'
@@ -38,6 +39,12 @@ export interface CohortSample {
   isCurrentPatient: boolean;
 }
 
+export interface GTExData {
+  tissue: string;
+  expression: number; // TPM or log2 values
+  stdDev: number;
+}
+
 export enum Tab {
   SUMMARY = 'Summary',
   CLINICAL = 'Clinical',
@@ -51,3 +58,5 @@ export interface AIAnalysisResult {
   therapeuticImplications: string;
   prognosticValue: string;
 }
+
+export type CohortScope = 'pancancer' | 'cancer_type';

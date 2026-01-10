@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Patient, CohortSample, GeneProfile } from '../types';
+import { Patient, CohortSample, GeneProfile, GTExData, CohortScope } from '../types';
 import ExpressionChart from './ExpressionChart';
+import GTExChart from './GTExChart';
 import GeneInsightCard from './GeneInsightCard';
 import GeneTable from './GeneTable';
-import { Download, Filter, Zap, Copy, GitMerge, Users, LayoutGrid } from 'lucide-react';
+import { Download, Filter, Zap, Copy, GitMerge, Users, LayoutGrid, Activity } from 'lucide-react';
 
 interface ExpressionTabProps {
   patient: Patient;
 }
 
-type CohortScope = 'pancancer' | 'cancer_type';
+type ViewMode = 'tumor_cohort' | 'normal_tissues';
 
 // Generate gene profile based on Sample ID to simulate tumor evolution
 const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
@@ -22,7 +23,6 @@ const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
   ];
 
   // Check if this is the primary or recurrent sample
-  // Primary usually ends in -01 in TCGA, Recurrent in -02
   const isRecurrent = sampleId.endsWith('-02');
 
   return genes.map(symbol => {
@@ -55,7 +55,6 @@ const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
         if (symbol === 'EGFR') {
             zScore = 1.5; // Decreased expression due to treatment?
             cna = 'GAIN'; // Copy number reduced
-            // Mutation might be lost or sub-clonal
         } else if (symbol === 'TP53') {
             zScore = -1.8; // Driver remains
             mutation = 'R273H'; 
@@ -80,14 +79,12 @@ const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
         else if (rand < 0.05) cna = 'HETLOSS';
     }
 
-    // Clamp Z-Score
     zScore = Math.max(-4, Math.min(4, zScore));
 
     return { symbol, zScore, mutation, cna, structuralVariant };
   });
 };
 
-// Mock cohort generator that includes ALL patient samples
 const generateCohortData = (
     gene: string, 
     patientSamples: {id: string, type: string, zScore: number}[],
@@ -97,24 +94,18 @@ const generateCohortData = (
   const count = scope === 'pancancer' ? 200 : 60;
   const samples: CohortSample[] = [];
   
-  // Cohort Parameters
-  // Pancancer: Broad distribution
-  // Specific: Maybe tighter or shifted depending on gene, but random for this mock
-  
   for (let i = 0; i < count; i++) {
     let u = 0, v = 0;
     while(u === 0) u = Math.random();
     while(v === 0) v = Math.random();
     let z = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
     
-    // Slight shift if specific cohort to simulate differences
     if (scope === 'cancer_type') {
-        z = z * 0.9; // Slightly tighter
+        z = z * 0.9;
     }
 
     let sampleTypeLabel = patientCancerType;
     if (scope === 'pancancer') {
-        // Randomly assign other cancer types
         const types = ['BRCA', 'LUAD', 'SKCM', 'COAD', 'PRAD', 'KIRC', patientCancerType];
         sampleTypeLabel = types[Math.floor(Math.random() * types.length)];
     }
@@ -127,7 +118,6 @@ const generateCohortData = (
     });
   }
   
-  // Add All Patient Samples
   patientSamples.forEach(ps => {
     samples.push({
       sampleId: ps.id,
@@ -140,11 +130,44 @@ const generateCohortData = (
   return samples;
 };
 
+// Generate Mock GTEx Data
+const generateGTExData = (gene: string): GTExData[] => {
+  const tissues = [
+    'Adipose', 'Adrenal', 'Bladder', 'Blood', 'Brain', 'Breast', 'Cervix', 
+    'Colon', 'Esophagus', 'Heart', 'Kidney', 'Liver', 'Lung', 'Muscle', 
+    'Nerve', 'Ovary', 'Pancreas', 'Prostate', 'Skin', 'Stomach', 'Thyroid', 'Uterus'
+  ];
+
+  return tissues.map(tissue => {
+    let base = Math.random() * 10;
+    
+    // Customize specific genes to look realistic
+    if (gene === 'EGFR') {
+        if (tissue === 'Skin' || tissue === 'Liver') base = 40 + Math.random() * 20;
+        if (tissue === 'Brain') base = 5 + Math.random() * 5; // Low in normal brain
+    } else if (gene === 'TP53') {
+        base = 15 + Math.random() * 10; // Ubiquitous
+    } else if (gene === 'PTEN') {
+        base = 20 + Math.random() * 10;
+        if (tissue === 'Brain') base = 30;
+    } else if (gene === 'BRCA1' || gene === 'BRCA2') {
+        if (tissue === 'Breast' || tissue === 'Ovary') base = 25 + Math.random() * 10;
+    }
+
+    return {
+        tissue,
+        expression: base, // TPM
+        stdDev: base * 0.2
+    };
+  });
+};
+
 const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
   const [selectedGene, setSelectedGene] = useState('EGFR');
   const [cohortScope, setCohortScope] = useState<CohortScope>('pancancer');
+  const [viewMode, setViewMode] = useState<ViewMode>('tumor_cohort');
   
-  // 1. Get FULL Data for ALL samples (for Chart + Detail Box + AI)
+  // 1. Get FULL Data for ALL samples
   const allPatientSamplesFullData = useMemo(() => {
     return patient.samples.map(sample => {
         const genes = generatePatientGeneProfile(sample.id);
@@ -155,12 +178,12 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
             sampleId: sample.id,
             sampleType: sample.sampleType,
             expressionValue: gene.zScore,
-            ...gene // symbol, zScore, mutation, cna, etc.
+            ...gene 
         };
     });
   }, [patient.samples, selectedGene]);
 
-  // 2. Aggregate ALL samples for ALL genes (for Table)
+  // 2. Aggregate Data for Table
   const aggregatedGeneData = useMemo(() => {
     const map: Record<string, { symbol: string, samples: Record<string, GeneProfile> }> = {};
     
@@ -178,17 +201,56 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
   }, [patient.samples]);
 
   const [cohortData, setCohortData] = useState<CohortSample[]>([]);
+  const [gtexData, setGtexData] = useState<GTExData[]>([]);
 
   useEffect(() => {
-    // Map full data to format expected by cohort generator
+    // Cohort Data
     const chartSamples = allPatientSamplesFullData.map(s => ({
         id: s.sampleId,
         type: s.sampleType,
         zScore: s.expressionValue
     }));
-    const data = generateCohortData(selectedGene, chartSamples, cohortScope, patient.cancerType);
-    setCohortData(data);
+    setCohortData(generateCohortData(selectedGene, chartSamples, cohortScope, patient.cancerType));
+    
+    // GTEx Data
+    setGtexData(generateGTExData(selectedGene));
   }, [selectedGene, allPatientSamplesFullData, cohortScope, patient.cancerType]);
+
+  // Determine the relevant normal tissue based on cancer type
+  const targetTissue = useMemo(() => {
+    const c = patient.cancerType.toLowerCase();
+    if (c.includes('glioblastoma') || c.includes('brain') || c.includes('glioma')) return 'Brain';
+    if (c.includes('lung')) return 'Lung';
+    if (c.includes('breast')) return 'Breast';
+    if (c.includes('melanoma') || c.includes('skin')) return 'Skin';
+    if (c.includes('renal') || c.includes('kidney')) return 'Kidney';
+    if (c.includes('colorectal') || c.includes('colon')) return 'Colon';
+    if (c.includes('prostate')) return 'Prostate';
+    if (c.includes('pancreas') || c.includes('pancreatic')) return 'Pancreas';
+    if (c.includes('liver') || c.includes('hepato')) return 'Liver';
+    if (c.includes('ovary') || c.includes('ovarian')) return 'Ovary';
+    if (c.includes('thyroid')) return 'Thyroid';
+    if (c.includes('stomach') || c.includes('gastric')) return 'Stomach';
+    if (c.includes('bladder') || c.includes('urothelial')) return 'Bladder';
+    if (c.includes('uterus') || c.includes('uterine') || c.includes('endometrial')) return 'Uterus';
+    if (c.includes('cervix') || c.includes('cervical')) return 'Cervix';
+    if (c.includes('esophagus') || c.includes('esophageal')) return 'Esophagus';
+    return undefined;
+  }, [patient.cancerType]);
+
+  // Prepare context string for AI
+  const aiNormalContext = useMemo(() => {
+    const sortedGtex = [...gtexData].sort((a,b) => b.expression - a.expression);
+    const top3 = sortedGtex.slice(0,3).map(g => `${g.tissue} (${g.expression.toFixed(1)} TPM)`).join(', ');
+    
+    const relevantTissueData = gtexData.find(g => g.tissue === targetTissue);
+    
+    let context = `In normal tissues (GTEx), highest expression is found in: ${top3}.`;
+    if (relevantTissueData) {
+        context += ` Normal expression in ${relevantTissueData.tissue} is ${relevantTissueData.expression.toFixed(1)} TPM.`;
+    }
+    return context;
+  }, [gtexData, targetTissue]);
 
   return (
     <div className="h-full">
@@ -198,26 +260,6 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
              <div className="flex items-center gap-4">
                 <h2 className="text-sm font-bold text-slate-800">Expression Analysis</h2>
-
-                {/* Cohort Toggle */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-md border border-slate-200">
-                    <button 
-                        onClick={() => setCohortScope('pancancer')}
-                        className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all ${cohortScope === 'pancancer' ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <LayoutGrid size={12} />
-                        Pancancer
-                    </button>
-                    <button 
-                        onClick={() => setCohortScope('cancer_type')}
-                        className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all ${cohortScope === 'cancer_type' ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Users size={12} />
-                        {patient.cancerType}
-                    </button>
-                </div>
-
-                <div className="hidden md:block h-6 w-px bg-gray-200"></div>
 
                 <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500">
                     <span className="flex items-center gap-1"><Zap size={10} className="text-green-600"/> Mutation</span>
@@ -252,13 +294,56 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
             {/* Right Panel: Visualization & Insights */}
             <div className="lg:col-span-7 grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                {/* Center: Chart */}
-                <div className="lg:col-span-2 h-[450px]">
-                    <ExpressionChart 
-                        cohortData={cohortData} 
-                        geneSymbol={selectedGene} 
-                        patientId={patient.id}
-                    />
+                {/* Center: Chart Area (Swappable) */}
+                <div className="lg:col-span-2 h-[600px] flex flex-col">
+                    {/* View Switcher Tabs */}
+                    <div className="flex gap-1 mb-2">
+                        <button 
+                            onClick={() => setViewMode('tumor_cohort')}
+                            className={`px-4 py-2 text-xs font-semibold rounded-t-lg border-t border-x transition-colors ${
+                                viewMode === 'tumor_cohort' 
+                                ? 'bg-white border-gray-200 text-blue-600 border-b-white -mb-px relative z-10' 
+                                : 'bg-gray-50 border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            Tumor Cohort (TCGA)
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('normal_tissues')}
+                            className={`px-4 py-2 text-xs font-semibold rounded-t-lg border-t border-x transition-colors flex items-center gap-1.5 ${
+                                viewMode === 'normal_tissues' 
+                                ? 'bg-white border-gray-200 text-blue-600 border-b-white -mb-px relative z-10' 
+                                : 'bg-gray-50 border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            <Activity size={12} />
+                            Normal Tissues (GTEx)
+                        </button>
+                    </div>
+
+                    <div className="flex-1 bg-white border border-gray-200 rounded-b-lg rounded-tr-lg p-1 shadow-sm relative z-0">
+                        {viewMode === 'tumor_cohort' ? (
+                            <div className="h-full p-2">
+                                <ExpressionChart 
+                                    cohortData={cohortData} 
+                                    geneSymbol={selectedGene} 
+                                    patientId={patient.id}
+                                    cohortScope={cohortScope}
+                                    setCohortScope={setCohortScope}
+                                    cancerType={patient.cancerType}
+                                />
+                            </div>
+                        ) : (
+                            <div className="h-full p-2">
+                                <GTExChart 
+                                    data={gtexData}
+                                    geneSymbol={selectedGene}
+                                    highlightTissue={targetTissue}
+                                />
+                            </div>
+                        )}
+                    </div>
+
                      <div className="mt-4 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                         <div className="mb-3 border-b border-gray-100 pb-2">
                             <h3 className="text-sm font-semibold text-slate-800">Selected Gene: {selectedGene}</h3>
@@ -320,6 +405,7 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
                         geneSymbol={selectedGene}
                         cancerType={patient.cancerType}
                         samplesData={allPatientSamplesFullData}
+                        normalTissueContext={aiNormalContext}
                     />
                 </div>
             </div>
