@@ -4,13 +4,11 @@ import ExpressionChart from './ExpressionChart';
 import GTExChart from './GTExChart';
 import GeneInsightCard from './GeneInsightCard';
 import GeneTable from './GeneTable';
-import { Download, Filter, Zap, Copy, GitMerge, Users, LayoutGrid, Activity } from 'lucide-react';
+import { Download, Filter, Zap, Copy, GitMerge } from 'lucide-react';
 
 interface ExpressionTabProps {
   patient: Patient;
 }
-
-type ViewMode = 'tumor_cohort' | 'normal_tissues';
 
 // Generate gene profile based on Sample ID to simulate tumor evolution
 const generatePatientGeneProfile = (sampleId: string): GeneProfile[] => {
@@ -165,7 +163,6 @@ const generateGTExData = (gene: string): GTExData[] => {
 const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
   const [selectedGene, setSelectedGene] = useState('EGFR');
   const [cohortScope, setCohortScope] = useState<CohortScope>('pancancer');
-  const [viewMode, setViewMode] = useState<ViewMode>('tumor_cohort');
   
   // 1. Get FULL Data for ALL samples
   const allPatientSamplesFullData = useMemo(() => {
@@ -292,115 +289,88 @@ const ExpressionTab: React.FC<ExpressionTabProps> = ({ patient }) => {
             </div>
 
             {/* Right Panel: Visualization & Insights */}
-            <div className="lg:col-span-7 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="lg:col-span-7 flex flex-col gap-6">
                 
-                {/* Center: Chart Area (Swappable) */}
-                <div className="lg:col-span-2 h-[600px] flex flex-col">
-                    {/* View Switcher Tabs */}
-                    <div className="flex gap-1 mb-2">
-                        <button 
-                            onClick={() => setViewMode('tumor_cohort')}
-                            className={`px-4 py-2 text-xs font-semibold rounded-t-lg border-t border-x transition-colors ${
-                                viewMode === 'tumor_cohort' 
-                                ? 'bg-white border-gray-200 text-blue-600 border-b-white -mb-px relative z-10' 
-                                : 'bg-gray-50 border-transparent text-slate-500 hover:text-slate-700'
-                            }`}
-                        >
-                            Tumor Cohort (TCGA)
-                        </button>
-                        <button 
-                            onClick={() => setViewMode('normal_tissues')}
-                            className={`px-4 py-2 text-xs font-semibold rounded-t-lg border-t border-x transition-colors flex items-center gap-1.5 ${
-                                viewMode === 'normal_tissues' 
-                                ? 'bg-white border-gray-200 text-blue-600 border-b-white -mb-px relative z-10' 
-                                : 'bg-gray-50 border-transparent text-slate-500 hover:text-slate-700'
-                            }`}
-                        >
-                            <Activity size={12} />
-                            Normal Tissues (GTEx)
-                        </button>
+                {/* Charts Area: Stacked Vertically */}
+                <div className="flex flex-col gap-6">
+                    {/* Tumor Cohort */}
+                    <div className="h-[500px] bg-white border border-gray-200 rounded-lg p-2 shadow-sm overflow-hidden">
+                        <ExpressionChart 
+                            cohortData={cohortData} 
+                            geneSymbol={selectedGene} 
+                            patientId={patient.id}
+                            cohortScope={cohortScope}
+                            setCohortScope={setCohortScope}
+                            cancerType={patient.cancerType}
+                        />
                     </div>
 
-                    <div className="flex-1 bg-white border border-gray-200 rounded-b-lg rounded-tr-lg p-1 shadow-sm relative z-0">
-                        {viewMode === 'tumor_cohort' ? (
-                            <div className="h-full p-2">
-                                <ExpressionChart 
-                                    cohortData={cohortData} 
-                                    geneSymbol={selectedGene} 
-                                    patientId={patient.id}
-                                    cohortScope={cohortScope}
-                                    setCohortScope={setCohortScope}
-                                    cancerType={patient.cancerType}
-                                />
-                            </div>
-                        ) : (
-                            <div className="h-full p-2">
-                                <GTExChart 
-                                    data={gtexData}
-                                    geneSymbol={selectedGene}
-                                    highlightTissue={targetTissue}
-                                />
-                            </div>
-                        )}
+                    {/* Normal Tissues */}
+                    <div className="h-[600px] bg-white border border-gray-200 rounded-lg p-2 shadow-sm overflow-hidden">
+                        <GTExChart 
+                            data={gtexData}
+                            geneSymbol={selectedGene}
+                            highlightTissue={targetTissue}
+                        />
+                    </div>
+                </div>
+
+                 <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+                    <div className="mb-3 border-b border-gray-100 pb-2">
+                        <h3 className="text-sm font-semibold text-slate-800">Selected Gene: {selectedGene}</h3>
                     </div>
 
-                     <div className="mt-4 bg-white p-5 rounded-lg shadow-sm border border-gray-200">
-                        <div className="mb-3 border-b border-gray-100 pb-2">
-                            <h3 className="text-sm font-semibold text-slate-800">Selected Gene: {selectedGene}</h3>
-                        </div>
-
-                        {/* List all samples */}
-                        <div className="grid grid-cols-1 gap-2">
-                            {allPatientSamplesFullData.map(sample => (
-                                <div key={sample.sampleId} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100">
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-slate-700">{sample.sampleId}</span>
-                                        <span className="text-[10px] text-slate-400">{sample.sampleType}</span>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-4">
-                                        {/* Alterations */}
-                                        <div className="flex gap-1">
-                                            {sample.mutation && (
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 border border-green-200">
-                                                    <Zap size={10} /> {sample.mutation}
-                                                </span>
-                                            )}
-                                            {sample.cna && sample.cna !== 'DIPLOID' && (
-                                                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                                                    sample.cna === 'AMP' || sample.cna === 'GAIN' 
-                                                        ? 'bg-red-50 text-red-700 border-red-100' 
-                                                        : 'bg-blue-50 text-blue-700 border-blue-100'
-                                                }`}>
-                                                    <Copy size={10} /> {sample.cna}
-                                                </span>
-                                            )}
-                                            {sample.structuralVariant && (
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200">
-                                                    <GitMerge size={10} /> Fus
-                                                </span>
-                                            )}
-                                            {!sample.mutation && (!sample.cna || sample.cna === 'DIPLOID') && !sample.structuralVariant && (
-                                                <span className="text-[10px] text-slate-300 italic">No alterations</span>
-                                            )}
-                                        </div>
-
-                                        {/* Z-Score */}
-                                        <div className="w-24 text-right">
-                                            <span className={`text-lg font-bold font-mono ${Math.abs(sample.expressionValue) > 1.5 ? (sample.expressionValue > 0 ? 'text-red-600' : 'text-blue-600') : 'text-slate-700'}`}>
-                                                {sample.expressionValue > 0 ? '+' : ''}{sample.expressionValue.toFixed(2)}
+                    {/* List all samples */}
+                    <div className="grid grid-cols-1 gap-2">
+                        {allPatientSamplesFullData.map(sample => (
+                            <div key={sample.sampleId} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100">
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-slate-700">{sample.sampleId}</span>
+                                    <span className="text-[10px] text-slate-400">{sample.sampleType}</span>
+                                </div>
+                                
+                                <div className="flex items-center gap-4">
+                                    {/* Alterations */}
+                                    <div className="flex gap-1">
+                                        {sample.mutation && (
+                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 border border-green-200">
+                                                <Zap size={10} /> {sample.mutation}
                                             </span>
-                                            <span className="text-[10px] text-slate-400 block -mt-1">Z-Score</span>
-                                        </div>
+                                        )}
+                                        {sample.cna && sample.cna !== 'DIPLOID' && (
+                                            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                                                sample.cna === 'AMP' || sample.cna === 'GAIN' 
+                                                    ? 'bg-red-50 text-red-700 border-red-100' 
+                                                    : 'bg-blue-50 text-blue-700 border-blue-100'
+                                            }`}>
+                                                <Copy size={10} /> {sample.cna}
+                                            </span>
+                                        )}
+                                        {sample.structuralVariant && (
+                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200">
+                                                <GitMerge size={10} /> Fus
+                                            </span>
+                                        )}
+                                        {!sample.mutation && (!sample.cna || sample.cna === 'DIPLOID') && !sample.structuralVariant && (
+                                            <span className="text-[10px] text-slate-300 italic">No alterations</span>
+                                        )}
+                                    </div>
+
+                                    {/* Z-Score */}
+                                    <div className="w-24 text-right">
+                                        <span className={`text-lg font-bold font-mono ${Math.abs(sample.expressionValue) > 1.5 ? (sample.expressionValue > 0 ? 'text-red-600' : 'text-blue-600') : 'text-slate-700'}`}>
+                                            {sample.expressionValue > 0 ? '+' : ''}{sample.expressionValue.toFixed(2)}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block -mt-1">Z-Score</span>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
                 {/* Bottom: AI Insights */}
-                <div className="lg:col-span-2 h-full min-h-[300px]">
+                <div className="min-h-[300px]">
                     <GeneInsightCard 
                         geneSymbol={selectedGene}
                         cancerType={patient.cancerType}
